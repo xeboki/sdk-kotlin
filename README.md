@@ -88,7 +88,7 @@ class OrdersViewModel : ViewModel() {
 
 ## Authentication
 
-API keys are available in your [Xeboki developer dashboard](https://developers.xeboki.com/dashboard).
+API keys are available in your [Xeboki account dashboard](https://account.xeboki.com).
 
 | Key prefix     | Environment |
 |----------------|-------------|
