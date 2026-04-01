@@ -116,31 +116,53 @@ val xeboki = XebokiClient(
 
 ### `pos` — Point of Sale
 
-Manage orders, products, inventory, customers, and sales reports.
+Build custom ordering apps, mobile storefronts, kiosk interfaces, and integrations on top of any subscriber's POS data.
+
+#### Catalog
+
+```kotlin
+// List active products
+val products = xeboki.pos.listProducts(
+    locationId = "loc_abc",
+    categoryId = "cat_drinks",
+    isActive   = true,
+    search     = "espresso",
+    limit      = 100
+)
+
+// Get a single product
+val product = xeboki.pos.getProduct(id = "prod_abc")
+println("${product.name}: \$${product.price}")
+
+// List categories
+val categories = xeboki.pos.listCategories(
+    locationId = "loc_abc",
+    isActive   = true
+)
+```
 
 #### Orders
 
 ```kotlin
-// List orders with filters
+// List orders
 val result = xeboki.pos.listOrders(
     limit      = 50,
     offset     = 0,
-    status     = "completed",
+    status     = "confirmed",  // pending|confirmed|processing|ready|completed|cancelled
     locationId = "loc_abc",
     startDate  = "2026-01-01",
     endDate    = "2026-03-31"
 )
-// result.data: List<Order>
-// result.total: Int
+// result.data: List<Order>, result.total: Int
 
 // Get a single order
 val order = xeboki.pos.getOrder(id = "ord_abc123")
-println("${order.orderNumber}: ${order.total}")
+println("${order.orderNumber}: \$${order.total}, paid: \$${order.paidTotal}")
 
-// Create an order
+// Create an order — inventory atomically reserved on create
 val newOrder = xeboki.pos.createOrder(
-    locationId    = "loc_abc",
-    paymentMethod = "cash",
+    locationId     = "loc_abc",
+    orderType      = "pickup",          // pickup|delivery|dine_in|takeaway
     items = listOf(
         OrderItemRequest(productId = "prod_1", quantity = 2),
         OrderItemRequest(
@@ -149,67 +171,184 @@ val newOrder = xeboki.pos.createOrder(
             modifiers = listOf(ModifierRequest(modifierId = "mod_oat"))
         )
     ),
-    customerId = "cust_xyz",
-    discount   = 5.00,
-    notes      = "No ice please"
+    customerId     = "cust_xyz",
+    reference      = "web-order-991",   // your external order ID (idempotency)
+    notes          = "No ice please",
+    tableId        = "tbl_5",
+    idempotencyKey = UUID.randomUUID().toString()  // prevents duplicate orders on retry
 )
+
+// Update order status (invalid transitions return 409)
+xeboki.pos.updateOrderStatus(
+    id     = "ord_abc123",
+    status = "confirmed",
+    note   = "Confirmed by kitchen"
+)
+
+// Cancel — inventory automatically restored
+xeboki.pos.updateOrderStatus(id = "ord_abc123", status = "cancelled")
 ```
+
+**Order status machine:** `pending → confirmed → processing → ready → completed` (any non-terminal → `cancelled`)
 
 **`Order` fields**
 
-| Field           | Type     | Description                                             |
-|-----------------|----------|---------------------------------------------------------|
-| `id`            | `String` | Unique order ID                                         |
-| `orderNumber`   | `String` | Human-readable order number                             |
-| `status`        | `String` | `pending`, `processing`, `completed`, `cancelled`, `refunded` |
-| `items`         | `List<OrderItem>` | Line items                                     |
-| `subtotal`      | `Double` | Pre-tax, pre-discount total                             |
-| `tax`           | `Double` | Tax amount                                              |
-| `discount`      | `Double` | Discount amount                                         |
-| `total`         | `Double` | Final charged amount                                    |
-| `locationId`    | `String` | Location that processed the order                       |
-| `employeeId`    | `String` | Employee who processed the order                        |
-| `paymentMethod` | `String` | Payment method used                                     |
-| `createdAt`     | `String` | ISO 8601 timestamp                                      |
+| Field          | Type     | Description                                                           |
+|----------------|----------|-----------------------------------------------------------------------|
+| `id`           | `String` | Unique order ID                                                       |
+| `orderNumber`  | `String` | Human-readable order number                                           |
+| `status`       | `String` | `pending`, `confirmed`, `processing`, `ready`, `completed`, `cancelled` |
+| `orderType`    | `String` | `pickup`, `delivery`, `dine_in`, `takeaway`                           |
+| `items`        | `List<OrderItem>` | Line items                                                   |
+| `subtotal`     | `Double` | Pre-tax, pre-discount total                                           |
+| `tax`          | `Double` | Tax amount                                                            |
+| `discount`     | `Double` | Discount amount                                                       |
+| `total`        | `Double` | Final charged amount                                                  |
+| `paidTotal`    | `Double` | Amount paid so far                                                    |
+| `reference`    | `String?`| Your external order ID                                                |
+| `locationId`   | `String` | Location that processed the order                                     |
+| `createdAt`    | `String` | ISO 8601 timestamp                                                    |
 
-#### Products
+#### Payments
+
+The API records payments — it does not process card charges. Collect payment in your app, then record the result.
 
 ```kotlin
-// List products
-val products = xeboki.pos.listProducts(
+// Record a full payment
+val payment = xeboki.pos.payOrder(
+    id        = "ord_abc123",
+    method    = "card",
+    amount    = 42.50,
+    reference = "pi_stripe_abc"  // optional — gateway transaction ID
+)
+
+// Split payment — add partial amounts one at a time
+val first = xeboki.pos.addPayment(
+    orderId = "ord_abc123",
+    method  = "cash",
+    amount  = 20.00
+)
+println("Remaining: \$${first.remainingAmount}")
+
+val second = xeboki.pos.addPayment(
+    orderId   = "ord_abc123",
+    method    = "card",
+    amount    = 22.50,
+    reference = "pi_stripe_xyz"
+)
+println("Fully paid: ${second.isFullyPaid}")  // true → order auto-completes
+
+// List all payments on an order
+val payments = xeboki.pos.listPayments(orderId = "ord_abc123")
+```
+
+#### Customers
+
+```kotlin
+// Search customers
+val customers = xeboki.pos.listCustomers(search = "jane", limit = 20)
+
+// Get a single customer (includes loyalty points, store credit)
+val customer = xeboki.pos.getCustomer(id = "cust_abc")
+
+// Create a customer
+val newCustomer = xeboki.pos.createCustomer(
+    name  = "Jane Doe",
+    email = "jane@example.com",
+    phone = "+1-555-0100"
+)
+```
+
+#### Appointments
+
+For service-based businesses — salons, gyms, repair shops, spas.
+
+```kotlin
+// List appointments
+val appts = xeboki.pos.listAppointments(
     locationId = "loc_abc",
-    isActive   = true,
-    search     = "espresso"
+    status     = "confirmed",  // pending|confirmed|in_progress|completed|cancelled|no_show
+    date       = "2026-04-15",
+    staffId    = "staff_xyz"
 )
 
-// Create a product
-val product = xeboki.pos.createProduct(
-    name           = "Flat White",
-    price          = 4.50,
-    locationId     = "loc_abc",
-    taxRate        = 0.10,
-    trackInventory = true,
-    categoryId     = "cat_coffee"
+// Book an appointment
+val newAppt = xeboki.pos.createAppointment(
+    locationId       = "loc_abc",
+    customerId       = "cust_xyz",
+    serviceId        = "prod_haircut",
+    staffId          = "staff_xyz",
+    startTime        = "2026-04-15T14:00:00Z",
+    durationMinutes  = 60,
+    notes            = "Trim only"
 )
 
-// Update a product
-val updated = xeboki.pos.updateProduct(
-    id    = "prod_abc",
-    price = 4.75
+// Update appointment status
+// When status → "completed", a POS order is auto-created for sales reporting
+xeboki.pos.updateAppointmentStatus(id = "appt_abc", status = "confirmed")
+```
+
+#### Staff
+
+```kotlin
+// List active staff
+val staff = xeboki.pos.listStaff(locationId = "loc_abc", isActive = true)
+
+// Get a staff member
+val member = xeboki.pos.getStaffMember(id = "staff_abc")
+```
+
+#### Discounts
+
+```kotlin
+// List active discount rules
+val discounts = xeboki.pos.listDiscounts(locationId = "loc_abc", isActive = true)
+
+// Validate a discount code before applying
+val result = xeboki.pos.validateDiscount(
+    code       = "SUMMER20",
+    orderTotal = 85.00,
+    locationId = "loc_abc"
 )
+if (result.valid) {
+    println("${result.type}: ${result.value}, saves: \$${result.discountAmount}")
+} else {
+    println(result.reason)  // expired | not_found | minimum_not_met
+}
+```
+
+#### Tables
+
+```kotlin
+// List tables
+val tables = xeboki.pos.listTables(
+    locationId = "loc_abc",
+    status     = "available"  // available|occupied|reserved|cleaning
+)
+
+// Update table status
+xeboki.pos.updateTable(id = "tbl_5", status = "occupied")
+```
+
+#### Gift Cards
+
+```kotlin
+// Look up a gift card by code
+val card = xeboki.pos.getGiftCard(code = "GC-XYZ-123")
+println("Balance: \$${card.balance}, active: ${card.isActive}")
 ```
 
 #### Inventory
 
 ```kotlin
-// List inventory (optional: filter to low-stock items only)
+// List inventory (optional: low-stock only)
 val inventory = xeboki.pos.listInventory(
     locationId   = "loc_abc",
     lowStockOnly = true
 )
 
 // Adjust a stock level
-val item = xeboki.pos.updateInventory(
+xeboki.pos.updateInventory(
     id       = "inv_abc",
     quantity = 50,
     reason   = "restock",
@@ -217,17 +356,39 @@ val item = xeboki.pos.updateInventory(
 )
 ```
 
-#### Customers
+#### Webhooks
 
 ```kotlin
-val customers = xeboki.pos.listCustomers(search = "jane", limit = 20)
-
-val customer = xeboki.pos.createCustomer(
-    name  = "Jane Doe",
-    email = "jane@example.com",
-    phone = "+1-555-0100"
+// Register a webhook
+val webhook = xeboki.pos.createWebhook(
+    url    = "https://yourserver.com/xeboki/events",
+    events = listOf("order.created", "order.completed", "order.cancelled")
 )
+println(webhook.secret)  // whsec_... — shown ONCE, store securely
+
+// List registered webhooks
+val webhooks = xeboki.pos.listWebhooks()
+
+// Delete a webhook
+xeboki.pos.deleteWebhook(id = "wh_abc123")
 ```
+
+**Verifying signatures in Kotlin**
+
+```kotlin
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+
+fun verifyWebhook(secret: String, body: String, signature: String): Boolean {
+    val mac = Mac.getInstance("HmacSHA256")
+    mac.init(SecretKeySpec(secret.toByteArray(), "HmacSHA256"))
+    val expected = "sha256=" + mac.doFinal(body.toByteArray())
+        .joinToString("") { "%02x".format(it) }
+    return expected == signature
+}
+```
+
+**Available POS events:** `order.created` · `order.updated` · `order.completed` · `order.cancelled` · `order.payment_added` · `order.paid` · `appointment.created` · `appointment.updated` · `appointment.completed` · `appointment.cancelled` · `inventory.low_stock`
 
 #### Sales Report
 
