@@ -1,6 +1,10 @@
-# xeboki-sdk for Kotlin / Android
+<p align="center">
+  <img src="https://raw.githubusercontent.com/xeboki/ordering-app/main/assets/images/xe_logo.svg" alt="Xeboki" width="120" />
+</p>
 
-Official Kotlin SDK for the [Xeboki developer API](https://developers.xeboki.com). Built with Ktor and Kotlin coroutines — idiomatic, suspend-based, and ready for Android and JVM.
+<h1 align="center">Xeboki SDK for Kotlin & Android</h1>
+
+<p align="center">Official Kotlin SDK for the <a href="https://developers.xeboki.com">Xeboki developer API</a>. Built with Ktor and Kotlin coroutines — idiomatic, suspend-based, and ready for Android and JVM.</p>
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.xeboki/xeboki-sdk)](https://central.sonatype.com/artifact/com.xeboki/xeboki-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
