@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/xeboki/ordering-app/main/assets/images/xe_logo.svg" alt="Xeboki" width="120" />
+  <img src="assets/xe_logo.svg" alt="Xeboki" width="120" />
 </p>
 
 <h1 align="center">Xeboki SDK for Kotlin & Android</h1>
