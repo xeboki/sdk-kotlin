@@ -24,12 +24,14 @@ class XebokiClient(
     private val rateLimitCallback: (RateLimitInfo) -> Unit = { _lastRateLimit = it }
 
     val pos       = PosClient(http, rateLimitCallback)
+    val ordering  = OrderingClient(http, rateLimitCallback)
     val chat      = ChatClient(http, rateLimitCallback)
     val link      = LinkClient(http, rateLimitCallback)
     val removebg  = RemoveBGClient(http, rateLimitCallback)
     val analytics = AnalyticsClient(http, rateLimitCallback)
     val account   = AccountClient(http, rateLimitCallback)
     val launchpad = LaunchpadClient(http, rateLimitCallback)
+    val developer = DeveloperClient(http, rateLimitCallback)
 
     /** Release underlying HTTP client resources. */
     fun close() = http.close()

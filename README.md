@@ -558,6 +558,126 @@ val release = xeboki.launchpad.createRelease(
 
 ---
 
+### `ordering` — Customer Ordering
+
+Build custom ordering apps, kiosks, and mobile storefronts on top of any
+subscriber's POS catalog. Includes customer auth, real-time order tracking,
+appointments, and more.
+
+```kotlin
+// Validate API key on startup
+val result = xeboki.ordering.validateApiKey()
+
+// Browse catalog
+val products = xeboki.ordering.listProducts(limit = 20)
+val categories = xeboki.ordering.listCategories()
+
+// Customer login / registration
+val auth = xeboki.ordering.loginCustomer(email = "...", password = "...")
+xeboki.ordering.registerCustomer(email = "...", password = "...", fullName = "Jane Doe")
+
+// Place an order
+val order = xeboki.ordering.createOrder(
+    orderType = "pickup",
+    items = listOf(mapOf("product_id" to "prod_abc", "quantity" to 2)),
+    customerId = "cust_xyz",
+)
+
+// Pay an order
+val paid = xeboki.ordering.payOrder(order.id, method = "card", amount = order.total)
+
+// Real-time tracking via Firestore (see Firestore-direct section below)
+val fbConfig = xeboki.ordering.getFirebaseConfig()
+```
+
+---
+
+### `developer` — API Keys & Webhooks
+
+Manage API keys and webhook endpoints programmatically.
+Requires a POS JWT issued to an admin-role user.
+
+```kotlin
+// ── API Keys ─────────────────────────────────────────────────────────────────
+
+// List all keys
+val keys = xeboki.developer.listApiKeys()
+
+// Create a key — full key shown ONCE, store it securely
+val created = xeboki.developer.createApiKey(
+    CreateApiKeyParams(name = "Mobile Storefront", scopes = listOf("pos:read", "orders:write"))
+)
+println("Save this key now: ${created.key}")
+
+// Revoke a key
+xeboki.developer.revokeApiKey(keyId)
+
+// ── Webhooks ──────────────────────────────────────────────────────────────────
+
+// Register an endpoint
+val hook = xeboki.developer.registerWebhook(
+    RegisterWebhookParams(
+        url    = "https://yourserver.com/webhooks/xeboki",
+        events = listOf("order.created", "order.status_changed")
+    )
+)
+
+// Send a test event
+xeboki.developer.testWebhook(hook.id, event = "order.created")
+
+// Delete an endpoint
+xeboki.developer.deleteWebhook(hook.id)
+```
+
+**Verifying webhook signatures in Kotlin**
+
+```kotlin
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+
+fun verifyWebhook(secret: String, rawBody: String, header: String): Boolean {
+    val mac = Mac.getInstance("HmacSHA256")
+    mac.init(SecretKeySpec(secret.toByteArray(), "HmacSHA256"))
+    val expected = "sha256=" + mac.doFinal(rawBody.toByteArray())
+        .joinToString("") { "%02x".format(it) }
+    return expected == header
+}
+```
+
+---
+
+### Firestore-direct path (ordering apps)
+
+The official Xeboki Ordering App reads directly from the subscriber's Firestore.
+
+```kotlin
+// Step 1 — fetch Firebase config + custom auth token
+val fbConfig = xeboki.ordering.getFirebaseConfig()
+
+// Step 2 — initialise a secondary Firebase app
+val options = FirebaseOptions.Builder()
+    .setApiKey(fbConfig.apiKey)
+    .setApplicationId(fbConfig.appId)
+    .setProjectId(fbConfig.projectId)
+    .setStorageBucket(fbConfig.storageBucket)
+    .build()
+FirebaseApp.initializeApp(context, options, "ordering_pro")
+
+// Step 3 — sign in with the custom token
+FirebaseAuth.getInstance(FirebaseApp.getInstance("ordering_pro"))
+    .signInWithCustomToken(fbConfig.customToken!!)
+    .await()
+
+// Step 4 — real-time order tracking
+FirebaseFirestore.getInstance(FirebaseApp.getInstance("ordering_pro"))
+    .collection("orders").document(orderId)
+    .addSnapshotListener { snap, _ ->
+        println("Status: ${snap?.getString("status")}")
+    }
+```
+
+---
+
 ## Error Handling
 
 All SDK methods throw `XebokiError` on non-2xx responses.
